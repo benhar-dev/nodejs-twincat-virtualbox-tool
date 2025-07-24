@@ -12,7 +12,7 @@ Use of this information, code, or scripts provided is at your own risk. Readers 
 
 This repository contains a tool I use to quickly start up TwinCAT/BSD VirtualBox VMs. It prompts for the desired ISO, VM name, and HDD size, then automatically sets up and launches a fully configured VM using VirtualBox.
 
-![screenshot](./docs/images/Screenshot.png)
+![screenshot](./docs/images/Screenshot.gif)
 
 ## Getting Started
 
