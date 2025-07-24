@@ -2,7 +2,7 @@
   "name": "nodejs-twincat-virtualbox-tool",
   "version": "0.2.0",
   "description": "Quick Make TwinCAT BSD or TwinCAT RT Linux Virtual Box VM",
-  "main": "app.js",
+  "main": "src/app.mjs",
   "directories": {
     "doc": "docs"
   },
