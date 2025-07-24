@@ -202,7 +202,7 @@ async function setupVM() {
   // Create VM
   logStep(`Creating VM: ${virtualMachineName}`);
   execSync(
-    `"${vboxManage}" createvm --name ${virtualMachineName} --basefolder "${workingDirectory}" --ostype FreeBSD_64 --register`
+    `"${vboxManage}" createvm --name "${virtualMachineName}" --basefolder "${workingDirectory}" --ostype FreeBSD_64 --register`
   );
   execSync(
     `"${vboxManage}" modifyvm "${virtualMachineName}" --memory 1024 --vram 128 --acpi on --hpet on --graphicscontroller vmsvga --firmware efi64`
@@ -233,7 +233,7 @@ async function setupVM() {
     "TcBSD_installer.vdi"
   );
   execSync(
-    `"${vboxManage}" convertfromraw --format VDI ${imgPath} "${installerVdi}"`
+    `"${vboxManage}" convertfromraw --format VDI "${imgPath}" "${installerVdi}"`
   );
 
   // Setup storage
