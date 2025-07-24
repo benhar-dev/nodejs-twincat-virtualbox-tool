@@ -1,5 +1,6 @@
-# prevent iso from being uploaded to git
-/iso/*.iso
+# prevent iso and img files from being uploaded to git
+/installerImages/*.iso
+/installerImages/*.img
 
 # Build folder
 build/

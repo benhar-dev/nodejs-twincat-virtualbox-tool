@@ -1,6 +1,6 @@
 {
   "name": "nodejs-twincatbsd-virtualbox-tool",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "This guide is a personal project and not a peer-reviewed publication or sponsored document. It is provided “as is,” without any warranties—express or implied—including, but not limited to, accuracy, completeness, reliability, or suitability for any purpose. The author(s) shall not be held liable for any errors, omissions, delays, or damages arising from the use or display of this information.",
   "main": "app.js",
   "directories": {

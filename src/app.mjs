@@ -6,7 +6,7 @@ import os from "os";
 
 // Set default values
 const virtualBoxPath = "C:\\Program Files\\Oracle\\VirtualBox";
-const isoFolder = path.join(process.cwd(), "iso"); // 'iso' folder in the repo
+const installerImagesFolder = path.join(process.cwd(), "installerImages"); // 'installerImages' folder in the repo
 const hddSizeGBDefault = 10;
 
 function logInfo(msg) {
@@ -67,38 +67,57 @@ function checkVBoxManage() {
   return vboxManage;
 }
 
-// Check if the ISO folder exists and contains ISOs
-function getAvailableISOs() {
-  if (!fs.existsSync(isoFolder)) {
+// List bridged network adapters using VBoxManage
+function listBridgedAdapters(vboxManage) {
+  try {
+    const output = execSync(`"${vboxManage}" list bridgedifs`, {
+      encoding: "utf-8",
+    });
+    return output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("Name:"))
+      .map((line) => line.split(":")[1].trim())
+      .filter(Boolean);
+  } catch (error) {
+    return [];
+  }
+}
+
+// Check if the images folder exists and contains ISO or IMG files
+function getAvailableInstallerImages() {
+  if (!fs.existsSync(installerImagesFolder)) {
     logError(
-      `'iso' folder not found. Please create a folder named 'iso' and place your ISOs there.`
+      `'installerImages' folder not found. Please create a folder named 'installerImages' and place your ISOs and IMG files there.`
     );
     process.exit(1);
   }
-  const isoFiles = fs
-    .readdirSync(isoFolder)
-    .filter((file) => file.endsWith(".iso"));
-  if (isoFiles.length === 0) {
-    logError(`No ISO files found in the 'iso' folder. Please add some ISOs.`);
+  const imgFiles = fs
+    .readdirSync(installerImagesFolder)
+    .filter((file) => file.endsWith(".iso") || file.endsWith(".img"));
+  if (imgFiles.length === 0) {
+    logError(
+      `No image files found in the 'installerImages' folder. Please add some ISOs or IMG files.`
+    );
     process.exit(1);
   }
-  return isoFiles;
+  return imgFiles;
 }
 
 // Prompt user for input
 async function promptUser() {
-  const availableISOs = getAvailableISOs();
+  const availableInstallerImages = getAvailableInstallerImages();
 
   // Prompt for VM Name with default
   const virtualMachineName = await input({
     message: "Enter Virtual Machine Name:",
-    default: `TwinCAT_BSD_${getTimestamp()}`,
+    default: `TwinCAT_VM_${getTimestamp()}`,
   });
 
-  // Prompt to select an ISO from the available list
-  const isoSelection = await rawlist({
-    message: "Select an ISO from the available list:",
-    choices: availableISOs.map((iso) => ({ name: iso, value: iso })),
+  // Prompt to select an image file from the available list
+  const imgSelection = await rawlist({
+    message: "Select an image file (.iso or .img):",
+    choices: availableInstallerImages.map((img) => ({ name: img, value: img })),
   });
 
   // Prompt for HDD size with validation
@@ -117,25 +136,56 @@ async function promptUser() {
     default: getDefaultVMFolder(),
   });
 
+  // Prompt for network configuration
+  let networkType = await rawlist({
+    message: "Choose network mode:",
+    choices: [
+      { name: "NAT", value: "nat" },
+      { name: "Bridged", value: "bridged" },
+    ],
+  });
+  let bridgedAdapter = null;
+  if (networkType === "bridged") {
+    const vboxManage = checkVBoxManage();
+    const adapters = listBridgedAdapters(vboxManage);
+    if (adapters.length === 0) {
+      logInfo("No bridged adapters found. Using NAT.");
+      networkType = "nat";
+    } else {
+      bridgedAdapter = await rawlist({
+        message: "Select a bridged adapter:",
+        choices: adapters.map((a) => ({ name: a, value: a })),
+      });
+    }
+  }
+
   return {
     virtualMachineName,
-    isoSelection,
+    imgSelection,
     hddSizeGB: parseInt(hddSizeGB, 10), // Ensure HDD size is parsed as an integer
     vmFolder,
+    networkType,
+    bridgedAdapter,
   };
 }
 
 // Create VM and start setup
 async function setupVM() {
-  const { virtualMachineName, isoSelection, hddSizeGB, vmFolder } =
-    await promptUser();
+  const {
+    virtualMachineName,
+    imgSelection,
+    hddSizeGB,
+    vmFolder,
+    networkType,
+    bridgedAdapter,
+  } = await promptUser();
   const vboxManage = checkVBoxManage();
-  const isoPath = path.join(isoFolder, isoSelection);
+  const imgPath = path.join(installerImagesFolder, imgSelection);
   const workingDirectory = vmFolder;
 
-  // Check for ISO file
-  if (!fs.existsSync(isoPath)) {
-    logError(`Failed: Missing TCBSD image: ${isoSelection}`);
+  // Check for image file
+  if (!fs.existsSync(imgPath)) {
+    logError(`Failed: Missing TC image: ${imgSelection}`);
     process.exit(1);
   }
 
@@ -158,32 +208,32 @@ async function setupVM() {
     `"${vboxManage}" modifyvm "${virtualMachineName}" --memory 1024 --vram 128 --acpi on --hpet on --graphicscontroller vmsvga --firmware efi64`
   );
 
-  // Set bridged network
-  const bridgedAdapters = execSync(`"${vboxManage}" list bridgedifs`, {
-    encoding: "utf-8",
-  });
-  const firstAdapter = bridgedAdapters.split("\n")[0].split(":")[1]?.trim();
-
-  if (!firstAdapter) {
-    logInfo(
-      "No bridged adapters found. Network adapter will not be configured."
-    );
+  // Configure network adapter
+  if (networkType === "bridged") {
+    if (!bridgedAdapter) {
+      logInfo(
+        "No bridged adapters found. Network adapter will not be configured."
+      );
+    } else {
+      logInfo(`Setting bridged network adapter to: ${bridgedAdapter}`);
+      execSync(
+        `"${vboxManage}" modifyvm "${virtualMachineName}" --nic1 bridged --bridgeadapter1 "${bridgedAdapter}"`
+      );
+    }
   } else {
-    logInfo(`Setting bridged network adapter to: ${firstAdapter}`);
-    execSync(
-      `"${vboxManage}" modifyvm "${virtualMachineName}" --nic1 bridged --bridgeadapter1 "${firstAdapter}"`
-    );
+    logInfo("Setting network adapter to NAT");
+    execSync(`"${vboxManage}" modifyvm "${virtualMachineName}" --nic1 nat`);
   }
 
-  // Convert ISO to VDI
-  logStep("Converting ISO to installer VDI...");
+  // Convert image to VDI
+  logStep("Converting image to installer VDI...");
   const installerVdi = path.join(
     workingDirectory,
     virtualMachineName,
     "TcBSD_installer.vdi"
   );
   execSync(
-    `"${vboxManage}" convertfromraw --format VDI ${isoPath} "${installerVdi}"`
+    `"${vboxManage}" convertfromraw --format VDI ${imgPath} "${installerVdi}"`
   );
 
   // Setup storage
