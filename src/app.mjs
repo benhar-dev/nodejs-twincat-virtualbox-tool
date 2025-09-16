@@ -9,6 +9,32 @@ const virtualBoxPath = "C:\\Program Files\\Oracle\\VirtualBox";
 const installerImagesFolder = path.join(process.cwd(), "installerImages"); // 'installerImages' folder in the repo
 const hddSizeGBDefault = 10;
 
+// Define OS profiles
+const osProfiles = {
+  TcBSD: {
+    name: "TcBSD",
+    ostype: "FreeBSD_64",
+    memoryMB: 1024,
+    cpus: 1,
+    efi: true,
+    firmware: "efi64",
+    graphicsController: "vmsvga",
+    diskFormat: "VHD",
+    diskSizeGB: hddSizeGBDefault,
+  },
+  TcLinux: {
+    name: "TcLinux",
+    ostype: "Debian_64",
+    memoryMB: 4096,
+    cpus: 4,
+    efi: true,
+    firmware: "efi",
+    graphicsController: "vmsvga",
+    diskFormat: "VHD",
+    diskSizeGB: 40,
+  },
+};
+
 function logInfo(msg) {
   console.log(`${msg}`);
 }
@@ -21,6 +47,13 @@ function logSuccess(msg) {
 
 function logError(msg) {
   console.error(`${msg}`);
+}
+
+// Detect OS type from filename prefix
+function detectOsTypeFromFilename(filename) {
+  if (filename.startsWith("TCLUR")) return "TcLinux";
+  if (filename.startsWith("TCBSD")) return "TcBSD";
+  return null; // Unknown or custom
 }
 
 // Get default VM folder from VirtualBox
@@ -84,6 +117,23 @@ function listBridgedAdapters(vboxManage) {
   }
 }
 
+// List host-only adapters using VBoxManage
+function listHostOnlyAdapters(vboxManage) {
+  try {
+    const output = execSync(`"${vboxManage}" list hostonlyifs`, {
+      encoding: "utf-8",
+    });
+    return output
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("Name:"))
+      .map((line) => line.split(":")[1].trim())
+      .filter(Boolean);
+  } catch (error) {
+    return [];
+  }
+}
+
 // Check if the images folder exists and contains ISO or IMG files
 function getAvailableInstallerImages() {
   if (!fs.existsSync(installerImagesFolder)) {
@@ -108,35 +158,47 @@ function getAvailableInstallerImages() {
 async function promptUser() {
   const availableInstallerImages = getAvailableInstallerImages();
 
-  // Prompt for VM Name with default
   const virtualMachineName = await input({
     message: "Enter Virtual Machine Name:",
     default: `TwinCAT_VM_${getTimestamp()}`,
   });
 
-  // Prompt to select an image file from the available list
   const imgSelection = await rawlist({
     message: "Select an image file (.iso or .img):",
     choices: availableInstallerImages.map((img) => ({ name: img, value: img })),
   });
 
-  // Prompt for HDD size with validation
+  // Try to auto-detect OS from filename
+  let detectedOs = detectOsTypeFromFilename(imgSelection);
+  let osType;
+  if (detectedOs) {
+    logInfo(`Auto-detected OS type: ${detectedOs}`);
+    osType = detectedOs;
+  } else {
+    osType = await rawlist({
+      message: "Select the VM operating system type:",
+      choices: Object.keys(osProfiles).map((key) => ({
+        name: key,
+        value: key,
+      })),
+    });
+  }
+
+  const profile = osProfiles[osType];
   const hddSizeGB = await input({
-    message: "Enter HDD size (GB):",
-    default: hddSizeGBDefault,
+    message: `Enter HDD size (GB):`,
+    default: profile.diskSizeGB,
     validate: (input) =>
       !isNaN(input) && input > 0
         ? true
         : "Please enter a valid number greater than 0.",
   });
 
-  // Prompt for VM folder with default from VBoxManage
   const vmFolder = await input({
     message: "Enter folder to store VM:",
     default: getDefaultVMFolder(),
   });
 
-  // Prompt for network configuration
   let networkType = await rawlist({
     message: "Choose network mode:",
     choices: [
@@ -144,6 +206,7 @@ async function promptUser() {
       { name: "Bridged", value: "bridged" },
     ],
   });
+
   let bridgedAdapter = null;
   if (networkType === "bridged") {
     const vboxManage = checkVBoxManage();
@@ -159,13 +222,44 @@ async function promptUser() {
     }
   }
 
+  // Optional host-only adapter as Adapter 2
+  let useHostOnlyAdapter = false;
+  let hostOnlyAdapter = null;
+
+  const addHostOnly = await rawlist({
+    message: "Do you want to add a Host-Only Adapter (Adapter 2)?",
+    choices: [
+      { name: "No", value: false },
+      { name: "Yes", value: true },
+    ],
+  });
+  useHostOnlyAdapter = addHostOnly;
+
+  if (useHostOnlyAdapter) {
+    const vboxManage = checkVBoxManage();
+    const adapters = listHostOnlyAdapters(vboxManage);
+
+    if (adapters.length === 0) {
+      logInfo("No Host-Only adapters found. Skipping Adapter 2.");
+      useHostOnlyAdapter = false;
+    } else {
+      hostOnlyAdapter = await rawlist({
+        message: "Select a Host-Only Adapter for Adapter 2:",
+        choices: adapters.map((name) => ({ name, value: name })),
+      });
+    }
+  }
+
   return {
     virtualMachineName,
     imgSelection,
-    hddSizeGB: parseInt(hddSizeGB, 10), // Ensure HDD size is parsed as an integer
+    hddSizeGB: parseInt(hddSizeGB, 10),
     vmFolder,
     networkType,
     bridgedAdapter,
+    osType,
+    useHostOnlyAdapter,
+    hostOnlyAdapter,
   };
 }
 
@@ -178,18 +272,26 @@ async function setupVM() {
     vmFolder,
     networkType,
     bridgedAdapter,
+    osType,
+    useHostOnlyAdapter,
+    hostOnlyAdapter,
   } = await promptUser();
+
+  const profile = osProfiles[osType];
   const vboxManage = checkVBoxManage();
   const imgPath = path.join(installerImagesFolder, imgSelection);
   const workingDirectory = vmFolder;
 
-  // Check for image file
-  if (!fs.existsSync(imgPath)) {
-    logError(`Failed: Missing TC image: ${imgSelection}`);
+  if (!profile) {
+    logError(`Unsupported OS type: ${osType}`);
     process.exit(1);
   }
 
-  // Check if the VM already exists
+  if (!fs.existsSync(imgPath)) {
+    logError(`Failed: Missing image: ${imgSelection}`);
+    process.exit(1);
+  }
+
   const existingVMs = execSync(`"${vboxManage}" list vms`, {
     encoding: "utf-8",
   });
@@ -202,13 +304,16 @@ async function setupVM() {
   // Create VM
   logStep(`Creating VM: ${virtualMachineName}`);
   execSync(
-    `"${vboxManage}" createvm --name "${virtualMachineName}" --basefolder "${workingDirectory}" --ostype FreeBSD_64 --register`
+    `"${vboxManage}" createvm --name "${virtualMachineName}" --basefolder "${workingDirectory}" --ostype ${profile.ostype} --register`
   );
   execSync(
-    `"${vboxManage}" modifyvm "${virtualMachineName}" --memory 1024 --vram 128 --acpi on --hpet on --graphicscontroller vmsvga --firmware efi64`
+    `"${vboxManage}" modifyvm "${virtualMachineName}" ` +
+      `--memory ${profile.memoryMB} --cpus ${profile.cpus} ` +
+      `--acpi on --hpet on --graphicscontroller ${profile.graphicsController} ` +
+      `--firmware ${profile.firmware}`
   );
 
-  // Configure network adapter
+  // Configure networking
   if (networkType === "bridged") {
     if (!bridgedAdapter) {
       logInfo(
@@ -225,42 +330,57 @@ async function setupVM() {
     execSync(`"${vboxManage}" modifyvm "${virtualMachineName}" --nic1 nat`);
   }
 
-  // Convert image to VDI
+  // Optional Host-Only Adapter as Adapter 2
+  if (useHostOnlyAdapter && hostOnlyAdapter) {
+    logInfo(`Adding Host-Only Adapter on Adapter 2: ${hostOnlyAdapter}`);
+    execSync(
+      `"${vboxManage}" modifyvm "${virtualMachineName}" ` +
+        `--nic2 hostonly --hostonlyadapter2 "${hostOnlyAdapter}"`
+    );
+  }
+
+  // Convert raw installer image
   logStep("Converting image to installer VDI...");
   const installerVdi = path.join(
     workingDirectory,
     virtualMachineName,
-    "TcBSD_installer.vdi"
+    "installer.vdi"
   );
   execSync(
     `"${vboxManage}" convertfromraw --format VDI "${imgPath}" "${installerVdi}"`
   );
 
-  // Setup storage
-  const runtimeVhd = path.join(
-    workingDirectory,
-    virtualMachineName,
-    "TcBSD.vhd"
-  );
+  // Setup storage controller
   execSync(
     `"${vboxManage}" storagectl "${virtualMachineName}" --name SATA --add sata --controller IntelAhci --hostiocache on --bootable on`
   );
+
+  // Attach installer image
   execSync(
     `"${vboxManage}" storageattach "${virtualMachineName}" --storagectl "SATA" --port 1 --device 0 --type hdd --medium "${installerVdi}"`
   );
 
+  // Create and attach runtime HDD
   logStep(`Creating runtime HDD: ${hddSizeGB}GB`);
+  const runtimeVhd = path.join(
+    workingDirectory,
+    virtualMachineName,
+    "runtime.vhd"
+  );
   const hddSizeMB = hddSizeGB * 1024;
   execSync(
-    `"${vboxManage}" createmedium --filename "${runtimeVhd}" --size ${hddSizeMB} --format VHD`
+    `"${vboxManage}" createmedium --filename "${runtimeVhd}" --size ${hddSizeMB} --format ${profile.diskFormat}`
   );
   execSync(
     `"${vboxManage}" storageattach "${virtualMachineName}" --storagectl "SATA" --port 0 --device 0 --type hdd --medium "${runtimeVhd}"`
   );
 
-  // Start VM
-  const vmDir = path.join(workingDirectory, virtualMachineName);
-  const vboxFile = path.join(vmDir, `${virtualMachineName}.vbox`);
+  // Launch VM
+  const vboxFile = path.join(
+    workingDirectory,
+    virtualMachineName,
+    `${virtualMachineName}.vbox`
+  );
   logStep("Starting Virtual Machine...");
   execSync(`start "" "${vboxFile}"`);
   logSuccess(`Virtual Machine '${virtualMachineName}' setup complete.`);
