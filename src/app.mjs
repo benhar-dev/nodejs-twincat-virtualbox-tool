@@ -22,8 +22,8 @@ const osProfiles = {
     diskFormat: "VHD",
     diskSizeGB: hddSizeGBDefault,
   },
-  TcLinux: {
-    name: "TcLinux",
+  BeckhoffRTLinux: {
+    name: "Beckhoff-RT-Linux",
     ostype: "Debian_64",
     memoryMB: 4096,
     cpus: 4,
@@ -51,8 +51,16 @@ function logError(msg) {
 
 // Detect OS type from filename prefix
 function detectOsTypeFromFilename(filename) {
-  if (filename.startsWith("TCLUR")) return "TcLinux";
-  if (filename.startsWith("TCBSD")) return "TcBSD";
+  const upper = filename.toUpperCase();
+
+  if (upper.startsWith("TCLUR") || upper.startsWith("BECKHOFF-RT-LINUX")) {
+    return "BeckhoffRTLinux";
+  }
+
+  if (upper.startsWith("TCBSD")) {
+    return "TcBSD";
+  }
+
   return null; // Unknown or custom
 }
 
@@ -172,8 +180,8 @@ async function promptUser() {
   let detectedOs = detectOsTypeFromFilename(imgSelection);
   let osType;
   if (detectedOs) {
-    logInfo(`Auto-detected OS type: ${detectedOs}`);
     osType = detectedOs;
+    logInfo(`Auto-detected OS: ${osProfiles[osType].name}`);
   } else {
     osType = await rawlist({
       message: "Select the VM operating system type:",
@@ -183,6 +191,7 @@ async function promptUser() {
       })),
     });
   }
+  4;
 
   const profile = osProfiles[osType];
   const hddSizeGB = await input({

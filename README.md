@@ -10,7 +10,7 @@ Use of this information, code, or scripts provided is at your own risk. Readers 
 
 ## Description
 
-This repository contains a tool I use to quickly start up TwinCAT/BSD or TwinCAT RT Linux VirtualBox VMs. It prompts for the desired ISO/IMG, VM name, and HDD size, then automatically sets up and launches a fully configured VM using VirtualBox.
+This repository contains a tool I use to quickly start up TwinCAT/BSD or Beckhoff Realtime Linux VirtualBox VMs. It prompts for the desired ISO/IMG, VM name, and HDD size, then automatically sets up and launches a fully configured VM using VirtualBox.
 
 ![screenshot](./docs/images/Screenshot.gif)
 
@@ -24,7 +24,7 @@ This repository contains a tool I use to quickly start up TwinCAT/BSD or TwinCAT
 Either
 
 - A `.iso` image of TwinCAT BSD (download from [Beckhoff](https://www.beckhoff.com/en-au/support/download-finder/search-result/?download_group=586494792&download_item=586494816))
-- A `.img` image of TwinCAT RT Linux (available via Beta program)
+- A `.img` image of Beckhoff Realtime Linux (download from [Beckhoff](https://www.beckhoff.com/en-au/support/download-finder/search-result/?download_group=992954948&download_item=992954970))
 
 ### Installation
 
@@ -48,15 +48,16 @@ Follow the prompts
 2. Select an .iso from the `./installerImages/` folder
 3. Enter desired HDD size (default: 10GB)
 4. Confirm the VM destination folder (defaults to VirtualBox's default machine folder, found in Oracle VirtualBox Manager > File > Preferences)
-5. Select network type and card
+5. Select network setup
 
 ## What It Does
 
 1. Checks for VBoxManage
 2. Lists available .iso and .img files in ./installerImages
-3. Creates a VM with:
-4. EFI and FreeBSD64 settings
-5. Network adapter configured as NAT or your selected bridged interface
-6. ISO converted to .vdi
-7. Runtime disk as .vhd
-8. Launches the VM .vbox file directly
+3. Automatically recommends settings for the type of os found.
+4. Creates a VM with:
+   - EFI and FreeBSD64 settings
+   - Network adapter configured as NAT or your selected bridged interface
+   - ISO converted to .vdi
+   - Runtime disk as .vhd
+5. Launches the VM .vbox file directly
