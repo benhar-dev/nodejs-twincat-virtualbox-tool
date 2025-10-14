@@ -1,4 +1,4 @@
-# Tools - Quick Make TwinCAT BSD and TwinCAT RT Linux Virtual Box VM
+# Tools - Quick Make TwinCAT BSD and Beckhoff RT Linux Virtual Box VM
 
 ## Disclaimer
 
