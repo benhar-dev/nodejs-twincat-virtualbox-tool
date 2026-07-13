@@ -61,3 +61,12 @@ Follow the prompts
    - ISO converted to .vdi
    - Runtime disk as .vhd
 5. Launches the VM .vbox file directly
+
+## Important VM Requirements
+
+> [!IMPORTANT]
+> Beckhoff Realtime Linux requires the virtual machine to use UEFI/EFI firmware. A VM configured to use legacy BIOS may fail to boot from the RT Linux .img installer.
+
+This tool automatically enables EFI when creating the VirtualBox VM, so no additional configuration should normally be required.
+
+The Beckhoff Realtime Linux installer is supplied as a raw .img disk image rather than an .iso. The tool converts and attaches the image in a format suitable for use by VirtualBox.
